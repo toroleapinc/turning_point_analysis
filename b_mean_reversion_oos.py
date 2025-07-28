@@ -1,5 +1,6 @@
 import time
 import pandas as pd
+import numpy as np
 import requests
 from ta.momentum import RSIIndicator
 
@@ -17,7 +18,7 @@ def fetch_binance_klines(symbol='BTCUSDT', interval='15m',
         'startTime': start_ts,
         'endTime': end_ts,
     }
-    resp = requests.get(url, params={k:v for k,v in params.items() if v is not None})
+    resp = requests.get(url, params={k: v for k, v in params.items() if v is not None})
     resp.raise_for_status()
     data = resp.json()
     df = pd.DataFrame(data, columns=[
@@ -27,7 +28,7 @@ def fetch_binance_klines(symbol='BTCUSDT', interval='15m',
     ])
     df['open_time']  = pd.to_datetime(df['open_time'], unit='ms')
     df['close_time'] = pd.to_datetime(df['close_time'], unit='ms')
-    for col in ['open','high','low','close','volume']:
+    for col in ['open', 'high', 'low', 'close', 'volume']:
         df[col] = df[col].astype(float)
     return df
 
@@ -99,14 +100,15 @@ for i in range(1, len(df)):
         else:
             df.at[i, 'position'] = -1
 
+# extract trades
 trades = []
-pos    = 0
+pos       = 0
 entry_idx = None
 
 for idx, row in df.iterrows():
     if pos == 0 and row['position'] != 0:
-        pos        = row['position']
-        entry_idx  = idx
+        pos       = row['position']
+        entry_idx = idx
     elif pos != 0 and row['position'] == 0:
         ep  = df.at[entry_idx, 'close']
         xp  = row['close']
@@ -130,9 +132,9 @@ trades_df['year']  = trades_df['entry_time'].dt.year
 trades_df['month'] = trades_df['entry_time'].dt.month
 
 summary = trades_df.groupby(['year','month']).agg(
-    num_trades  = ('pnl_pct','size'),
-    win_rate    = ('pnl_pct', lambda x: (x>0).mean()),
-    avg_pnl_pct = ('pnl_pct','mean')
+    num_trades  = ('pnl_pct', 'size'),
+    win_rate    = ('pnl_pct', lambda x: (x > 0).mean()),
+    avg_pnl_pct = ('pnl_pct', 'mean')
 ).reset_index().sort_values(['year','month'])
 
 print("Summary (year-month) head:")
@@ -142,7 +144,40 @@ print(summary.head(12).to_string(index=False))
 pct_high_win = (summary['win_rate'] > 0.5).mean() * 100
 print(f"Share of year‑month periods with win rate > 50%: {pct_high_win:.2f}%")
 
-# ─── 5) Save results ──────────────────────────────────────────────────────────
+# ─── 5) Holistic performance metrics ──────────────────────────────────────────
+# 5a) Total & annualized returns
+r = trades_df['pnl_pct'] / 100 + 1
+total_return = r.prod() - 1
+years = (df['close_time'].iloc[-1] - df['open_time'].iloc[0]).days / 365.25
+cagr = (1 + total_return)**(1/years) - 1
+print(f"Total return: {total_return*100:.2f}% over {years:.1f} yrs, CAGR: {cagr*100:.2f}%")
+
+# 5b) Trade‑level stats
+wins   = trades_df.loc[trades_df.pnl_pct > 0, 'pnl_pct']
+losses = trades_df.loc[trades_df.pnl_pct <= 0, 'pnl_pct']
+W      = len(wins) / len(trades_df)
+avg_w  = wins.mean()
+avg_l  = -losses.mean()
+expect = W * avg_w - (1 - W) * avg_l
+pf     = wins.sum() / -losses.sum()
+print(f"Trades: {len(trades_df)}, Win rate: {W*100:.2f}%, "
+      f"Avg win: {avg_w:.2f}%, Avg loss: {avg_l:.2f}%")
+print(f"Expectancy: {expect:.2f}%, Profit factor: {pf:.2f}")
+
+# 5c) Equity curve & drawdown
+trades_df['cum_return'] = r.cumprod()
+equity = trades_df.set_index('exit_time')['cum_return']
+rolling_max = equity.cummax()
+drawdown = equity / rolling_max - 1
+max_dd = drawdown.min()
+print(f"Max drawdown: {max_dd*100:.2f}%")
+
+# 5d) Sharpe ratio (per‑trade)
+trades_per_year = len(trades_df) / years
+sharpe = (trades_df['pnl_pct']/100).mean() / (trades_df['pnl_pct']/100).std() * np.sqrt(trades_per_year)
+print(f"Sharpe ratio (per‑trade): {sharpe:.2f}")
+
+# ─── 6) Save results ──────────────────────────────────────────────────────────
 trades_df.to_csv('backtest_results.csv', index=False)
 print("Saved detailed trades to 'backtest_results.csv'")
 summary.to_csv('backtest_summary.csv', index=False)
