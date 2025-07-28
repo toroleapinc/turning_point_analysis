@@ -6,3 +6,5 @@ keras
 matplotlib
 h5py
 yfinance
+ta 
+backtesting
