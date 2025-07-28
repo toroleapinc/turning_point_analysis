@@ -8,7 +8,7 @@ from joblib import load
 from keras.models import load_model
 from sklearn.metrics import confusion_matrix, f1_score
 
-from utils import (
+from a_utils import (
     compute_all_features,
     create_sliding_window_data,
     FEATURE_SETS
