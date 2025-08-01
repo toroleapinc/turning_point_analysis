@@ -126,59 +126,34 @@ for idx, row in df.iterrows():
 trades_df = pd.DataFrame(trades)
 print(f"Total trades extracted: {len(trades_df)}")
 
-# ─── 4) Calculate monthly & yearly win rates ──────────────────────────────────
-print("Calculating win rate and average P/L by year & month")
+# ─── 4) Calculate monthly win rates ─────────────────────────────────────────────
+print("Calculating monthly win rate and trade counts")
 trades_df['year']  = trades_df['entry_time'].dt.year
 trades_df['month'] = trades_df['entry_time'].dt.month
 
-summary = trades_df.groupby(['year','month']).agg(
-    num_trades  = ('pnl_pct', 'size'),
-    win_rate    = ('pnl_pct', lambda x: (x > 0).mean()),
-    avg_pnl_pct = ('pnl_pct', 'mean')
+monthly_summary = trades_df.groupby(['year','month']).agg(
+    num_trades = ('pnl_pct', 'size'),
+    win_rate   = ('pnl_pct', lambda x: (x > 0).mean())
 ).reset_index().sort_values(['year','month'])
 
-print("Summary (year-month) head:")
-print(summary.head(12).to_string(index=False))
+print("Monthly summary (year, month, trades, win_rate):")
+print(monthly_summary.to_string(index=False))
 
-# ─── 4b) Log % of periods with win_rate > 0.5 ─────────────────────────────────
-pct_high_win = (summary['win_rate'] > 0.5).mean() * 100
-print(f"Share of year‑month periods with win rate > 50%: {pct_high_win:.2f}%")
+# ─── 4b) Calculate yearly win rates ──────────────────────────────────────────────
+yearly_summary = trades_df.groupby('year').agg(
+    num_trades = ('pnl_pct', 'size'),
+    win_rate   = ('pnl_pct', lambda x: (x > 0).mean())
+).reset_index().sort_values('year')
 
-# ─── 5) Holistic performance metrics ──────────────────────────────────────────
-# 5a) Total & annualized returns
-r = trades_df['pnl_pct'] / 100 + 1
-total_return = r.prod() - 1
-years = (df['close_time'].iloc[-1] - df['open_time'].iloc[0]).days / 365.25
-cagr = (1 + total_return)**(1/years) - 1
-print(f"Total return: {total_return*100:.2f}% over {years:.1f} yrs, CAGR: {cagr*100:.2f}%")
+print("\nYearly summary (year, trades, win_rate):")
+print(yearly_summary.to_string(index=False))
 
-# 5b) Trade‑level stats
-wins   = trades_df.loc[trades_df.pnl_pct > 0, 'pnl_pct']
-losses = trades_df.loc[trades_df.pnl_pct <= 0, 'pnl_pct']
-W      = len(wins) / len(trades_df)
-avg_w  = wins.mean()
-avg_l  = -losses.mean()
-expect = W * avg_w - (1 - W) * avg_l
-pf     = wins.sum() / -losses.sum()
-print(f"Trades: {len(trades_df)}, Win rate: {W*100:.2f}%, "
-      f"Avg win: {avg_w:.2f}%, Avg loss: {avg_l:.2f}%")
-print(f"Expectancy: {expect:.2f}%, Profit factor: {pf:.2f}")
+# ─── 4c) Overall win rate ───────────────────────────────────────────────────────
+overall_win_rate = (trades_df['pnl_pct'] > 0).mean()
+print(f"\nOverall win rate: {overall_win_rate * 100:.2f}%")
 
-# 5c) Equity curve & drawdown
-trades_df['cum_return'] = r.cumprod()
-equity = trades_df.set_index('exit_time')['cum_return']
-rolling_max = equity.cummax()
-drawdown = equity / rolling_max - 1
-max_dd = drawdown.min()
-print(f"Max drawdown: {max_dd*100:.2f}%")
-
-# 5d) Sharpe ratio (per‑trade)
-trades_per_year = len(trades_df) / years
-sharpe = (trades_df['pnl_pct']/100).mean() / (trades_df['pnl_pct']/100).std() * np.sqrt(trades_per_year)
-print(f"Sharpe ratio (per‑trade): {sharpe:.2f}")
-
-# ─── 6) Save results ──────────────────────────────────────────────────────────
+# ─── 5) Save results ────────────────────────────────────────────────────────────
 trades_df.to_csv('backtest_results.csv', index=False)
 print("Saved detailed trades to 'backtest_results.csv'")
-summary.to_csv('backtest_summary.csv', index=False)
+monthly_summary.to_csv('backtest_summary.csv', index=False)
 print("Saved monthly summary to 'backtest_summary.csv'")
