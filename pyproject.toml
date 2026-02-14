@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.backends._legacy:_Backend"
+
+[project]
+name = "turning-point-analysis"
+version = "1.0.0"
+description = "LSTM-based detection of stock market reversal points"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.10"
+dependencies = [
+    "numpy",
+    "pandas",
+    "scikit-learn",
+    "tensorflow",
+    "keras",
+    "matplotlib",
+    "h5py",
+    "yfinance",
+    "ta",
+    "backtesting",
+    "pyyaml",
+]
+
+[project.optional-dependencies]
+dev = ["pytest"]
